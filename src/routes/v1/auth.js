@@ -7,6 +7,7 @@ const router = Router({ mergeParams: true });
 
 router.post('/login',    manejoErrores(ctrlAuth.login));
 router.post('/logout',   ctrlAuth.logout);
+router.get('/me',        requireAuth, manejoErrores(ctrlAuth.me));
 router.put('/password',  requireAuth, manejoErrores(ctrlAuth.cambiarPassword));
 
 export default router;

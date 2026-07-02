@@ -60,8 +60,8 @@ export const registrar = async (req, res) => {
     let rolAdminId;
     for (const r of ROLES_BASE) {
       const { rows: [rol] } = await client.query(
-        'INSERT INTO S_roles (empresa_id, nombre, descripcion, es_default) VALUES ($1,$2,$3,$4) RETURNING id',
-        [empresa.id, r.nombre, r.descripcion, r.es_default]
+        'INSERT INTO S_roles (empresa_id, nombre, descripcion, es_default, creado_por) VALUES ($1,$2,$3,$4,$5) RETURNING id',
+        [empresa.id, r.nombre, r.descripcion, r.es_default, usuario.id]
       );
       await client.query(
         'INSERT INTO S_roles_permisos (rol_id, permiso_id) SELECT $1, id FROM S_permisos WHERE clave = ANY($2)',

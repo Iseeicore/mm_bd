@@ -1,6 +1,7 @@
 import 'dotenv/config';
 import express from 'express';
 import cookieParser from 'cookie-parser';
+import cors from 'cors';
 import helmet from 'helmet';
 import { globalLimiter, authLimiter } from './middleware/rateLimiter.js';
 import health from './routes/v1/health.js';
@@ -14,6 +15,7 @@ import configuracion from './routes/v1/configuracion.js';
 
 const app = express();
 app.use(helmet());
+app.use(cors({ origin: process.env.FRONTEND_URL || 'http://localhost:4200', credentials: true }));
 app.use(express.json());
 app.use(cookieParser());
 app.use(globalLimiter);

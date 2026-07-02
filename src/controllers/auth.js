@@ -87,6 +87,18 @@ export const logout = (req, res) => {
   res.json({ ok: true });
 };
 
+export const me = async (req, res) => {
+  const { rows: [usuario] } = await db.query(
+    'SELECT nombre, email FROM S_usuarios WHERE id = $1 AND activo = TRUE',
+    [req.user.id]
+  );
+  if (!usuario) throw new AppError('Usuario no encontrado', 404);
+
+  const { rows: permisos } = await db.query('SELECT clave FROM get_matriz_permisos($1)', [req.user.id]);
+
+  res.json({ nombre: usuario.nombre, email: usuario.email, permisos: permisos.map((p) => p.clave) });
+};
+
 export const cambiarPassword = async (req, res) => {
   const { password_actual, password_nueva } = req.body;
 
