@@ -7,6 +7,7 @@ import { globalLimiter, authLimiter } from './middleware/rateLimiter.js';
 import health from './routes/v1/health.js';
 import registro from './routes/v1/registro.js';
 import auth from './routes/v1/auth.js';
+import authGlobal from './routes/v1/authGlobal.js';
 import sistema from './routes/v1/sistema.js';
 import usuario from './routes/v1/usuario.js';
 import rol from './routes/v1/rol.js';
@@ -22,6 +23,7 @@ app.use(globalLimiter);
 
 app.use('/api/v1/health', health);
 app.use('/api/v1/registro', authLimiter, registro);
+app.use('/api/v1/auth', authLimiter, authGlobal);
 app.use('/api/v1/empresas/:public_id/auth', authLimiter, auth);
 app.use('/api/v1/sistemas', sistema);
 app.use('/api/v1/usuarios', usuario);

@@ -10,7 +10,7 @@ export const create = async (req, res) => {
   const { rows } = await db.query(
     `INSERT INTO S_roles (empresa_id, nombre, descripcion, es_default, creado_por)
      VALUES ($1, $2, $3, $4, $5)
-     ON CONFLICT (empresa_id, nombre) DO NOTHING
+     ON CONFLICT (empresa_id, nombre) WHERE activo = TRUE DO NOTHING
      RETURNING public_id, nombre, descripcion, es_default, empresa_id, activo, fecha_creacion`,
     [req.user.empresa_id, nombre, descripcion ?? null, es_default, req.user.id]
   );
@@ -36,7 +36,7 @@ export const update = async (req, res) => {
   if (nombre) {
     const { rows: [conflicto] } = await db.query(
       `SELECT id FROM S_roles
-       WHERE nombre = $1 AND empresa_id = $2 AND id <> $3`,
+       WHERE nombre = $1 AND empresa_id = $2 AND id <> $3 AND activo = TRUE`,
       [nombre, req.user.empresa_id, rol.id]
     );
     if (conflicto) throw new AppError('Ya existe un rol con ese nombre en esta empresa', 409);

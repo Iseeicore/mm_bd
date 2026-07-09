@@ -39,7 +39,7 @@ export const create = async (req, res) => {
   const { rows } = await db.query(
     `INSERT INTO S_usuarios (empresa_id, nombre, email, password_hash, creado_por)
      VALUES ($1,$2,$3,$4,$5)
-     ON CONFLICT (email, empresa_id) DO NOTHING
+     ON CONFLICT (email, empresa_id) WHERE activo = TRUE DO NOTHING
      RETURNING public_id, empresa_id, nombre, email, activo, fecha_creacion`,
     [req.user.empresa_id, nombre, email, hash, req.user.id]
   );
@@ -64,7 +64,7 @@ export const update = async (req, res) => {
   if (email) {
     const { rows: [conflicto] } = await db.query(
       `SELECT id FROM S_usuarios
-       WHERE email = $1 AND empresa_id = $2 AND id <> $3`,
+       WHERE email = $1 AND empresa_id = $2 AND id <> $3 AND activo = TRUE`,
       [email, req.user.empresa_id, usuario.id]
     );
     if (conflicto) throw new AppError('Email ya registrado en este sistema', 409);

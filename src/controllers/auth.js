@@ -87,6 +87,25 @@ export const logout = (req, res) => {
   res.json({ ok: true });
 };
 
+// Un mismo email puede existir en varias empresas (UNIQUE es por empresa, no
+// global) — el login necesita saber a cuál empresa apuntar antes de validar
+// la contraseña, porque esa se valida por empresa (empresa_id en la URL).
+export const empresasPorEmail = async (req, res) => {
+  const { email } = req.query;
+  if (!email) throw new BadRequestError('Se requiere email');
+
+  const { rows } = await db.query(
+    `SELECT e.public_id, e.nombre
+     FROM S_usuarios u
+     JOIN S_empresa e ON e.id = u.empresa_id
+     WHERE u.email = $1 AND u.activo = TRUE AND e.activo = TRUE
+     ORDER BY e.nombre`,
+    [email]
+  );
+
+  res.json(rows);
+};
+
 export const me = async (req, res) => {
   const { rows: [usuario] } = await db.query(
     'SELECT nombre, email FROM S_usuarios WHERE id = $1 AND activo = TRUE',

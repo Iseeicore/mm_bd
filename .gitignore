@@ -3,3 +3,9 @@ node_modules/
 *.sql
 *.yaml
 *.atl
+.atl/
+AGENTS.md
+skills-lock.json
+*.py
+*.claude
+*.agents
