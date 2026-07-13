@@ -7,11 +7,10 @@ const ROLES_BASE = [
     nombre: 'Administrador',
     descripcion: 'Acceso total al sistema',
     es_default: false,
-    permisos: [
-      'sistemas.read', 'sistemas.create', 'sistemas.update', 'sistemas.delete',
-      'usuarios.read', 'usuarios.create', 'usuarios.update', 'usuarios.delete',
-      'roles.read', 'roles.create', 'roles.update', 'roles.delete', 'roles.assign',
-    ],
+    // null = TODOS los permisos que existan en S_permisos (ver el loop más
+    // abajo), no una lista a mano — así "Acceso total" es real y no depende
+    // de acordarse de sumar acá cada permiso de cada módulo nuevo.
+    permisos: null,
   },
   {
     nombre: 'Gestor',
@@ -63,10 +62,14 @@ export const registrar = async (req, res) => {
         'INSERT INTO S_roles (empresa_id, nombre, descripcion, es_default, creado_por) VALUES ($1,$2,$3,$4,$5) RETURNING id',
         [empresa.id, r.nombre, r.descripcion, r.es_default, usuario.id]
       );
-      await client.query(
-        'INSERT INTO S_roles_permisos (rol_id, permiso_id) SELECT $1, id FROM S_permisos WHERE clave = ANY($2)',
-        [rol.id, r.permisos]
-      );
+      if (r.permisos === null) {
+        await client.query('INSERT INTO S_roles_permisos (rol_id, permiso_id) SELECT $1, id FROM S_permisos', [rol.id]);
+      } else {
+        await client.query(
+          'INSERT INTO S_roles_permisos (rol_id, permiso_id) SELECT $1, id FROM S_permisos WHERE clave = ANY($2)',
+          [rol.id, r.permisos]
+        );
+      }
       if (r.nombre === 'Administrador') rolAdminId = rol.id;
     }
 

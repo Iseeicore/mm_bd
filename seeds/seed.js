@@ -26,7 +26,10 @@ const ROLES_BASE = [
     nombre: 'Administrador',
     descripcion: 'Acceso total al sistema',
     es_default: false,
-    permisos: PERMISOS.map(p => p.clave),
+    // null = TODOS los permisos que existan en S_permisos al momento de
+    // correr el seed (no solo los de este archivo) — mismo criterio que
+    // registro.js, para que "Acceso total" sea real.
+    permisos: null,
   },
   {
     nombre: 'Gestor',
@@ -90,11 +93,15 @@ async function seed() {
         `INSERT INTO S_roles (empresa_id, nombre, descripcion, es_default, creado_por) VALUES ($1,$2,$3,$4,$5) RETURNING id`,
         [empresa.id, r.nombre, r.descripcion, r.es_default, usuario.id]
       );
-      await client.query(
-        `INSERT INTO S_roles_permisos (rol_id, permiso_id)
-         SELECT $1, id FROM S_permisos WHERE clave = ANY($2)`,
-        [rol.id, r.permisos]
-      );
+      if (r.permisos === null) {
+        await client.query(`INSERT INTO S_roles_permisos (rol_id, permiso_id) SELECT $1, id FROM S_permisos`, [rol.id]);
+      } else {
+        await client.query(
+          `INSERT INTO S_roles_permisos (rol_id, permiso_id)
+           SELECT $1, id FROM S_permisos WHERE clave = ANY($2)`,
+          [rol.id, r.permisos]
+        );
+      }
       if (r.nombre === 'Administrador') rolAdminId = rol.id;
     }
 

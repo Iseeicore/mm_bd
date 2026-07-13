@@ -1,0 +1,370 @@
+{
+  "info": {
+    "name": "Minimarket API — Pipeline Productos/Inventario",
+    "description": "Flujo end-to-end: registro -> login -> crear almacén y tienda -> crear producto -> stock en almacén y tienda -> modificar precio -> ver stock e historial -> verificar que NO se puede desactivar producto/almacén/tienda con stock -> vaciar stock y verificar que ahí sí se puede.\n\nCorrer la colección completa en orden (Runner o Collection Runner). Cada carpeta depende de la anterior via variables de colección (empresa_public_id, admin_email, admin_password, almacen_id, tienda_id, producto_id). Requiere la API corriendo en {{baseUrl}}.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:3000/api/v1" },
+    { "key": "empresa_public_id", "value": "" },
+    { "key": "admin_email", "value": "" },
+    { "key": "admin_password", "value": "" },
+    { "key": "almacen_id", "value": "" },
+    { "key": "tienda_id", "value": "" },
+    { "key": "producto_id", "value": "" }
+  ],
+  "item": [
+    {
+      "name": "01 - Auth",
+      "item": [
+        {
+          "name": "1.1 POST /registro — crea empresa + admin nuevos",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": { "exec": [
+                "const ts = Date.now();",
+                "pm.collectionVariables.set('admin_email', `admin.test.${ts}@minimarket.test`);",
+                "pm.collectionVariables.set('admin_password', 'Admin1234!');",
+                "pm.collectionVariables.set('empresa_ruc', `RUC${ts}`);"
+              ] }
+            },
+            {
+              "listen": "test",
+              "script": { "exec": [
+                "pm.test('201 Created', () => pm.response.to.have.status(201));",
+                "const body = pm.response.json();",
+                "pm.test('devuelve empresa_public_id', () => pm.expect(body.empresa_public_id).to.be.a('string'));",
+                "pm.collectionVariables.set('empresa_public_id', body.empresa_public_id);"
+              ] }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"empresa_nombre\": \"Empresa Test Productos\",\n  \"empresa_ruc\": \"{{empresa_ruc}}\",\n  \"admin_nombre\": \"Admin Test\",\n  \"admin_email\": \"{{admin_email}}\",\n  \"admin_password\": \"{{admin_password}}\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/registro", "host": ["{{baseUrl}}"], "path": ["registro"] }
+          }
+        },
+        {
+          "name": "1.2 POST /empresas/:id/auth/login",
+          "event": [
+            {
+              "listen": "test",
+              "script": { "exec": [
+                "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                "pm.test('ok: true', () => pm.expect(pm.response.json().ok).to.eql(true));",
+                "pm.test('seteó la cookie httpOnly token', () => pm.expect(pm.cookies.has('token')).to.be.true);"
+              ] }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{admin_email}}\",\n  \"password\": \"{{admin_password}}\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/empresas/{{empresa_public_id}}/auth/login", "host": ["{{baseUrl}}"], "path": ["empresas", "{{empresa_public_id}}", "auth", "login"] }
+          }
+        },
+        {
+          "name": "1.3 GET /empresas/:id/auth/me — confirma permisos de productos",
+          "event": [
+            {
+              "listen": "test",
+              "script": { "exec": [
+                "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                "const body = pm.response.json();",
+                "pm.test('tiene productos.create', () => pm.expect(body.permisos).to.include('productos.create'));",
+                "pm.test('tiene almacenes.create', () => pm.expect(body.permisos).to.include('almacenes.create'));",
+                "pm.test('tiene tiendas.create', () => pm.expect(body.permisos).to.include('tiendas.create'));"
+              ] }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/empresas/{{empresa_public_id}}/auth/me", "host": ["{{baseUrl}}"], "path": ["empresas", "{{empresa_public_id}}", "auth", "me"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "02 - Almacenes y Tiendas (CRUD)",
+      "item": [
+        {
+          "name": "2.1 POST /almacenes",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('201 Created', () => pm.response.to.have.status(201));",
+            "const body = pm.response.json();",
+            "pm.collectionVariables.set('almacen_id', body.public_id);",
+            "pm.test('nombre correcto', () => pm.expect(body.nombre).to.eql('Almacén Central'));"
+          ] } }],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"nombre\": \"Almacén Central\",\n  \"ubicacion\": \"Lima\"\n}" },
+            "url": { "raw": "{{baseUrl}}/almacenes", "host": ["{{baseUrl}}"], "path": ["almacenes"] }
+          }
+        },
+        {
+          "name": "2.2 POST /tiendas",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('201 Created', () => pm.response.to.have.status(201));",
+            "const body = pm.response.json();",
+            "pm.collectionVariables.set('tienda_id', body.public_id);",
+            "pm.test('nombre correcto', () => pm.expect(body.nombre).to.eql('Tienda Norte'));"
+          ] } }],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"nombre\": \"Tienda Norte\",\n  \"ubicacion\": \"Lima\"\n}" },
+            "url": { "raw": "{{baseUrl}}/tiendas", "host": ["{{baseUrl}}"], "path": ["tiendas"] }
+          }
+        },
+        {
+          "name": "2.3 GET /almacenes — listado",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('200 OK', () => pm.response.to.have.status(200));",
+            "const body = pm.response.json();",
+            "pm.test('incluye el almacén creado', () => pm.expect(body.data.some(a => a.public_id === pm.collectionVariables.get('almacen_id'))).to.be.true);"
+          ] } }],
+          "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/almacenes", "host": ["{{baseUrl}}"], "path": ["almacenes"] } }
+        },
+        {
+          "name": "2.4 PUT /almacenes/:id — actualizar",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('200 OK', () => pm.response.to.have.status(200));",
+            "pm.test('nombre actualizado', () => pm.expect(pm.response.json().nombre).to.eql('Almacén Central Renovado'));"
+          ] } }],
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"nombre\": \"Almacén Central Renovado\"\n}" },
+            "url": { "raw": "{{baseUrl}}/almacenes/{{almacen_id}}", "host": ["{{baseUrl}}"], "path": ["almacenes", "{{almacen_id}}"] }
+          }
+        },
+        {
+          "name": "2.5 GET /tiendas/:id — detalle",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('200 OK', () => pm.response.to.have.status(200));",
+            "pm.test('public_id coincide', () => pm.expect(pm.response.json().public_id).to.eql(pm.collectionVariables.get('tienda_id')));"
+          ] } }],
+          "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/tiendas/{{tienda_id}}", "host": ["{{baseUrl}}"], "path": ["tiendas", "{{tienda_id}}"] } }
+        }
+      ]
+    },
+    {
+      "name": "03 - Productos (CRUD)",
+      "item": [
+        {
+          "name": "3.1 POST /productos",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('201 Created', () => pm.response.to.have.status(201));",
+            "const body = pm.response.json();",
+            "pm.collectionVariables.set('producto_id', body.public_id);",
+            "pm.test('precio_venta_unidad correcto', () => pm.expect(body.precio_venta_unidad).to.eql('3.50'));"
+          ] } }],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"nombre\": \"Coca Cola 500ml\",\n  \"codigo_barras\": \"7501234567890\",\n  \"unidades_por_paquete\": 12,\n  \"precio_compra_paquete\": 30.00,\n  \"precio_venta_unidad\": 3.50,\n  \"precio_venta_paquete\": 33.00\n}" },
+            "url": { "raw": "{{baseUrl}}/productos", "host": ["{{baseUrl}}"], "path": ["productos"] }
+          }
+        },
+        {
+          "name": "3.2 GET /productos/:id — detalle",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('200 OK', () => pm.response.to.have.status(200));"
+          ] } }],
+          "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/productos/{{producto_id}}", "host": ["{{baseUrl}}"], "path": ["productos", "{{producto_id}}"] } }
+        },
+        {
+          "name": "3.3 PUT /productos/:id — actualizar nombre (permitido)",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('200 OK', () => pm.response.to.have.status(200));",
+            "pm.test('nombre actualizado', () => pm.expect(pm.response.json().nombre).to.eql('Coca Cola 500ml Retornable'));"
+          ] } }],
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"nombre\": \"Coca Cola 500ml Retornable\"\n}" },
+            "url": { "raw": "{{baseUrl}}/productos/{{producto_id}}", "host": ["{{baseUrl}}"], "path": ["productos", "{{producto_id}}"] }
+          }
+        },
+        {
+          "name": "3.4 PUT /productos/:id — mandar precio (debe rechazar, 400)",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('400 Bad Request', () => pm.response.to.have.status(400));",
+            "pm.test('mensaje indica usar PATCH .../precio', () => pm.expect(pm.response.json().error).to.include('PATCH'));"
+          ] } }],
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"precio_venta_unidad\": 5.00\n}" },
+            "url": { "raw": "{{baseUrl}}/productos/{{producto_id}}", "host": ["{{baseUrl}}"], "path": ["productos", "{{producto_id}}"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "04 - Stock por ubicación",
+      "item": [
+        {
+          "name": "4.1 PUT stock en almacén (100 unidades)",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('200 OK', () => pm.response.to.have.status(200));",
+            "pm.test('stock_actual = 100', () => pm.expect(pm.response.json().stock_actual).to.eql(100));"
+          ] } }],
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"stock_actual\": 100,\n  \"stock_minimo\": 10\n}" },
+            "url": { "raw": "{{baseUrl}}/productos/{{producto_id}}/stock/almacenes/{{almacen_id}}", "host": ["{{baseUrl}}"], "path": ["productos", "{{producto_id}}", "stock", "almacenes", "{{almacen_id}}"] }
+          }
+        },
+        {
+          "name": "4.2 PUT stock en tienda (20 unidades)",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('200 OK', () => pm.response.to.have.status(200));",
+            "pm.test('stock_actual = 20', () => pm.expect(pm.response.json().stock_actual).to.eql(20));"
+          ] } }],
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"stock_actual\": 20,\n  \"stock_minimo\": 5\n}" },
+            "url": { "raw": "{{baseUrl}}/productos/{{producto_id}}/stock/tiendas/{{tienda_id}}", "host": ["{{baseUrl}}"], "path": ["productos", "{{producto_id}}", "stock", "tiendas", "{{tienda_id}}"] }
+          }
+        },
+        {
+          "name": "4.3 GET stock consolidado (almacén + tienda)",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('200 OK', () => pm.response.to.have.status(200));",
+            "const body = pm.response.json();",
+            "pm.test('1 almacén con 100 unidades', () => { pm.expect(body.almacenes).to.have.lengthOf(1); pm.expect(body.almacenes[0].stock_actual).to.eql(100); });",
+            "pm.test('1 tienda con 20 unidades', () => { pm.expect(body.tiendas).to.have.lengthOf(1); pm.expect(body.tiendas[0].stock_actual).to.eql(20); });"
+          ] } }],
+          "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/productos/{{producto_id}}/stock", "host": ["{{baseUrl}}"], "path": ["productos", "{{producto_id}}", "stock"] } }
+        },
+        {
+          "name": "4.4 PUT stock negativo en almacén (debe rechazar, 400)",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('400 Bad Request', () => pm.response.to.have.status(400));",
+            "pm.test('mensaje legible, sin nombre de constraint interno', () => {",
+            "  const msg = pm.response.json().error;",
+            "  pm.expect(msg).to.include('stock suficiente');",
+            "  pm.expect(msg).to.not.include('chk_');",
+            "});"
+          ] } }],
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"stock_actual\": -5\n}" },
+            "url": { "raw": "{{baseUrl}}/productos/{{producto_id}}/stock/almacenes/{{almacen_id}}", "host": ["{{baseUrl}}"], "path": ["productos", "{{producto_id}}", "stock", "almacenes", "{{almacen_id}}"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "05 - Precio e historial",
+      "item": [
+        {
+          "name": "5.1 PATCH /productos/:id/precio",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('200 OK', () => pm.response.to.have.status(200));",
+            "pm.test('precio_venta_unidad = 4.00', () => pm.expect(pm.response.json().precio_venta_unidad).to.eql('4.00'));"
+          ] } }],
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"precio_venta_unidad\": 4.00\n}" },
+            "url": { "raw": "{{baseUrl}}/productos/{{producto_id}}/precio", "host": ["{{baseUrl}}"], "path": ["productos", "{{producto_id}}", "precio"] }
+          }
+        },
+        {
+          "name": "5.2 GET /productos/:id/historial-precios",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('200 OK', () => pm.response.to.have.status(200));",
+            "const body = pm.response.json();",
+            "pm.test('al menos 1 cambio registrado', () => pm.expect(body.data.length).to.be.at.least(1));",
+            "pm.test('registra 3.50 -> 4.00', () => { const c = body.data[0]; pm.expect(c.precio_venta_unidad_anterior).to.eql('3.50'); pm.expect(c.precio_venta_unidad_nuevo).to.eql('4.00'); });",
+            "pm.test('incluye quién lo cambió', () => pm.expect(body.data[0].modificado_por_nombre).to.eql('Admin Test'));"
+          ] } }],
+          "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/productos/{{producto_id}}/historial-precios", "host": ["{{baseUrl}}"], "path": ["productos", "{{producto_id}}", "historial-precios"] } }
+        }
+      ]
+    },
+    {
+      "name": "06 - Bloqueo de baja CON stock (deben fallar con 409)",
+      "item": [
+        {
+          "name": "6.1 DELETE /productos/:id — con stock, debe dar 409",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('409 Conflict', () => pm.response.to.have.status(409));",
+            "pm.test('mensaje menciona stock', () => pm.expect(pm.response.json().error.toLowerCase()).to.include('stock'));"
+          ] } }],
+          "request": { "method": "DELETE", "url": { "raw": "{{baseUrl}}/productos/{{producto_id}}", "host": ["{{baseUrl}}"], "path": ["productos", "{{producto_id}}"] } }
+        },
+        {
+          "name": "6.2 DELETE /almacenes/:id — con stock, debe dar 409",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('409 Conflict', () => pm.response.to.have.status(409));",
+            "pm.test('mensaje menciona stock', () => pm.expect(pm.response.json().error.toLowerCase()).to.include('stock'));"
+          ] } }],
+          "request": { "method": "DELETE", "url": { "raw": "{{baseUrl}}/almacenes/{{almacen_id}}", "host": ["{{baseUrl}}"], "path": ["almacenes", "{{almacen_id}}"] } }
+        },
+        {
+          "name": "6.3 DELETE /tiendas/:id — con stock, debe dar 409",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('409 Conflict', () => pm.response.to.have.status(409));",
+            "pm.test('mensaje menciona stock', () => pm.expect(pm.response.json().error.toLowerCase()).to.include('stock'));"
+          ] } }],
+          "request": { "method": "DELETE", "url": { "raw": "{{baseUrl}}/tiendas/{{tienda_id}}", "host": ["{{baseUrl}}"], "path": ["tiendas", "{{tienda_id}}"] } }
+        }
+      ]
+    },
+    {
+      "name": "07 - Vaciar stock y dar de baja (camino feliz)",
+      "item": [
+        {
+          "name": "7.1 PUT stock almacén a 0",
+          "event": [{ "listen": "test", "script": { "exec": ["pm.test('200 OK', () => pm.response.to.have.status(200));"] } }],
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"stock_actual\": 0\n}" },
+            "url": { "raw": "{{baseUrl}}/productos/{{producto_id}}/stock/almacenes/{{almacen_id}}", "host": ["{{baseUrl}}"], "path": ["productos", "{{producto_id}}", "stock", "almacenes", "{{almacen_id}}"] }
+          }
+        },
+        {
+          "name": "7.2 PUT stock tienda a 0",
+          "event": [{ "listen": "test", "script": { "exec": ["pm.test('200 OK', () => pm.response.to.have.status(200));"] } }],
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"stock_actual\": 0\n}" },
+            "url": { "raw": "{{baseUrl}}/productos/{{producto_id}}/stock/tiendas/{{tienda_id}}", "host": ["{{baseUrl}}"], "path": ["productos", "{{producto_id}}", "stock", "tiendas", "{{tienda_id}}"] }
+          }
+        },
+        {
+          "name": "7.3 DELETE /productos/:id — ahora sí, 204",
+          "event": [{ "listen": "test", "script": { "exec": ["pm.test('204 No Content', () => pm.response.to.have.status(204));"] } }],
+          "request": { "method": "DELETE", "url": { "raw": "{{baseUrl}}/productos/{{producto_id}}", "host": ["{{baseUrl}}"], "path": ["productos", "{{producto_id}}"] } }
+        },
+        {
+          "name": "7.4 DELETE /almacenes/:id — ahora sí, 204",
+          "event": [{ "listen": "test", "script": { "exec": ["pm.test('204 No Content', () => pm.response.to.have.status(204));"] } }],
+          "request": { "method": "DELETE", "url": { "raw": "{{baseUrl}}/almacenes/{{almacen_id}}", "host": ["{{baseUrl}}"], "path": ["almacenes", "{{almacen_id}}"] } }
+        },
+        {
+          "name": "7.5 DELETE /tiendas/:id — ahora sí, 204",
+          "event": [{ "listen": "test", "script": { "exec": ["pm.test('204 No Content', () => pm.response.to.have.status(204));"] } }],
+          "request": { "method": "DELETE", "url": { "raw": "{{baseUrl}}/tiendas/{{tienda_id}}", "host": ["{{baseUrl}}"], "path": ["tiendas", "{{tienda_id}}"] } }
+        }
+      ]
+    }
+  ]
+}

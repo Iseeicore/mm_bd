@@ -1,5 +1,6 @@
 node_modules/
 .env
+logs/
 *.sql
 *.yaml
 *.atl
@@ -9,3 +10,4 @@ skills-lock.json
 *.py
 *.claude
 *.agents
+*docs
