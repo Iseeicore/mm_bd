@@ -1,6 +1,8 @@
 import db from '../db.js';
 import { BadRequestError, NotFoundError, validarUUID } from '../utils/error.js';
+import { paginar, respuestaPaginada } from '../utils/paginar.js';
 import { StockUbicacionNormalizador } from '../normalizers/stockUbicacionNormalizador.js';
+import { ProductoStockNormalizador } from '../normalizers/productoStockNormalizador.js';
 
 const buscarProducto = async (publicId, empresaId) => {
   const { rows: [producto] } = await db.query(
@@ -9,6 +11,122 @@ const buscarProducto = async (publicId, empresaId) => {
   );
   if (!producto) throw new NotFoundError();
   return producto;
+};
+
+const buscarAlmacen = async (publicId, empresaId) => {
+  const { rows: [almacen] } = await db.query(
+    `SELECT id FROM S_almacenes WHERE public_id = $1 AND empresa_id = $2 AND activo = TRUE`,
+    [publicId, empresaId]
+  );
+  if (!almacen) throw new NotFoundError();
+  return almacen;
+};
+
+const buscarTienda = async (publicId, empresaId) => {
+  const { rows: [tienda] } = await db.query(
+    `SELECT id FROM S_tiendas WHERE public_id = $1 AND empresa_id = $2 AND activo = TRUE`,
+    [publicId, empresaId]
+  );
+  if (!tienda) throw new NotFoundError();
+  return tienda;
+};
+
+// Arma la respuesta paginada+normalizada compartida por las 4 funciones de
+// abajo -- las queries en si quedan explicitas en cada una (nunca se
+// interpola un nombre de tabla en el SQL).
+const responderListadoProductos = (res, rows, page, limit) => {
+  const { data, meta } = respuestaPaginada(rows, page, limit);
+  res.json({ data: ProductoStockNormalizador.normalizarLista(data), meta });
+};
+
+// Inversa de obtenerStock: dado un almacen, que productos tiene.
+export const listarProductosAlmacen = async (req, res) => {
+  const almacen = await buscarAlmacen(validarUUID(req.params.id), req.user.empresa_id);
+  const { page, limit, offset } = paginar(req.query);
+
+  const { rows } = await db.query(
+    `SELECT p.public_id AS producto_public_id, p.nombre AS producto_nombre,
+            p.precio_venta_unidad, p.precio_venta_paquete, p.unidades_por_paquete,
+            pa.stock_actual, (pa.stock_actual / p.unidades_por_paquete) AS paquetes_completos,
+            pa.stock_minimo, pa.fecha_actualizacion,
+            COUNT(*) OVER() AS _total
+     FROM S_producto_almacen pa
+     JOIN S_productos p ON p.id = pa.producto_id
+     WHERE pa.almacen_id = $1 AND p.activo = TRUE
+     ORDER BY p.nombre
+     LIMIT $2 OFFSET $3`,
+    [almacen.id, limit, offset]
+  );
+
+  responderListadoProductos(res, rows, page, limit);
+};
+
+// Usa idx_pa_stock_bajo (WHERE stock_actual <= stock_minimo), que existia en
+// el schema desde Fase 1 sin ningun endpoint que lo usara.
+export const listarProductosAlmacenStockBajo = async (req, res) => {
+  const almacen = await buscarAlmacen(validarUUID(req.params.id), req.user.empresa_id);
+  const { page, limit, offset } = paginar(req.query);
+
+  const { rows } = await db.query(
+    `SELECT p.public_id AS producto_public_id, p.nombre AS producto_nombre,
+            p.precio_venta_unidad, p.precio_venta_paquete, p.unidades_por_paquete,
+            pa.stock_actual, (pa.stock_actual / p.unidades_por_paquete) AS paquetes_completos,
+            pa.stock_minimo, pa.fecha_actualizacion,
+            COUNT(*) OVER() AS _total
+     FROM S_producto_almacen pa
+     JOIN S_productos p ON p.id = pa.producto_id
+     WHERE pa.almacen_id = $1 AND p.activo = TRUE AND pa.stock_actual <= pa.stock_minimo
+     ORDER BY pa.stock_actual ASC
+     LIMIT $2 OFFSET $3`,
+    [almacen.id, limit, offset]
+  );
+
+  responderListadoProductos(res, rows, page, limit);
+};
+
+// Inversa de obtenerStock: dado una tienda, que productos tiene.
+export const listarProductosTienda = async (req, res) => {
+  const tienda = await buscarTienda(validarUUID(req.params.id), req.user.empresa_id);
+  const { page, limit, offset } = paginar(req.query);
+
+  const { rows } = await db.query(
+    `SELECT p.public_id AS producto_public_id, p.nombre AS producto_nombre,
+            p.precio_venta_unidad, p.precio_venta_paquete, p.unidades_por_paquete,
+            pt.stock_actual, (pt.stock_actual / p.unidades_por_paquete) AS paquetes_completos,
+            pt.stock_minimo, pt.fecha_actualizacion,
+            COUNT(*) OVER() AS _total
+     FROM S_producto_tienda pt
+     JOIN S_productos p ON p.id = pt.producto_id
+     WHERE pt.tienda_id = $1 AND p.activo = TRUE
+     ORDER BY p.nombre
+     LIMIT $2 OFFSET $3`,
+    [tienda.id, limit, offset]
+  );
+
+  responderListadoProductos(res, rows, page, limit);
+};
+
+// Usa idx_pt_stock_bajo (WHERE stock_actual <= stock_minimo), mismo criterio
+// que la version de almacen.
+export const listarProductosTiendaStockBajo = async (req, res) => {
+  const tienda = await buscarTienda(validarUUID(req.params.id), req.user.empresa_id);
+  const { page, limit, offset } = paginar(req.query);
+
+  const { rows } = await db.query(
+    `SELECT p.public_id AS producto_public_id, p.nombre AS producto_nombre,
+            p.precio_venta_unidad, p.precio_venta_paquete, p.unidades_por_paquete,
+            pt.stock_actual, (pt.stock_actual / p.unidades_por_paquete) AS paquetes_completos,
+            pt.stock_minimo, pt.fecha_actualizacion,
+            COUNT(*) OVER() AS _total
+     FROM S_producto_tienda pt
+     JOIN S_productos p ON p.id = pt.producto_id
+     WHERE pt.tienda_id = $1 AND p.activo = TRUE AND pt.stock_actual <= pt.stock_minimo
+     ORDER BY pt.stock_actual ASC
+     LIMIT $2 OFFSET $3`,
+    [tienda.id, limit, offset]
+  );
+
+  responderListadoProductos(res, rows, page, limit);
 };
 
 export const obtenerStock = async (req, res) => {

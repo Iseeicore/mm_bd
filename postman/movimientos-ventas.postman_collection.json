@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "Minimarket API — Pipeline Movimientos/Ventas (Fase 2)",
-    "description": "Flujo end-to-end: registro -> login -> setup (2 almacenes + 1 tienda + 1 producto) -> movimientos (entrada, traspaso, casos de error) -> ventas (1 línea, multi-línea multi-origen, casos de error) -> reportes (historial de stock, más vendidos) -> bloqueo por permiso ausente (403 con el rol Lector).\n\nCorrer la colección completa en orden (Runner o Collection Runner). Depende de que la migración bd/migrations/007_add_movimientos_ventas.sql ya esté aplicada contra la base real. Cada carpeta depende de la anterior vía variables de colección (empresa_public_id, admin_email, admin_password, almacen_principal_id, almacen_secundario_id, tienda_id, producto_id, venta_id). La carpeta 06 cambia la cookie de sesión al usuario Lector y no la revierte -- es la última carpeta a propósito. Requiere la API corriendo en {{baseUrl}}.",
+    "description": "Flujo end-to-end: registro -> login -> setup (2 almacenes + 1 tienda + 1 producto) -> movimientos (entrada, traspaso, casos de error) -> ventas (1 línea, multi-línea multi-origen, casos de error) -> reportes (historial de stock, más vendidos) -> bloqueo por permiso ausente (403 con el rol Lector) -> listado de productos por ubicación (gap de Fase 1, no de Fase 2 -- se agregó acá a pedido del usuario).\n\nCorrer la colección completa en orden (Runner o Collection Runner). Depende de que la migración bd/migrations/007_add_movimientos_ventas.sql ya esté aplicada contra la base real. Cada carpeta depende de la anterior vía variables de colección (empresa_public_id, admin_email, admin_password, almacen_principal_id, almacen_secundario_id, tienda_id, producto_id, venta_id). La carpeta 06 cambia la cookie de sesión al usuario Lector; la carpeta 07 vuelve a loguearse como admin en su primer request (7.0) antes de seguir. Requiere la API corriendo en {{baseUrl}}.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -483,6 +483,112 @@
             "pm.test('mensaje sin permiso', () => pm.expect(pm.response.json().error).to.eql('Sin permiso'));"
           ] } }],
           "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/reportes/mas-vendidos", "host": ["{{baseUrl}}"], "path": ["reportes", "mas-vendidos"] } }
+        }
+      ]
+    },
+    {
+      "name": "07 - Listado de productos por ubicación (gap de Fase 1)",
+      "item": [
+        {
+          "name": "7.0 POST /empresas/:id/auth/login — vuelve a loguearse como admin (06 dejó la sesión como Lector)",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('200 OK', () => pm.response.to.have.status(200));"
+          ] } }],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"email\": \"{{admin_email}}\",\n  \"password\": \"{{admin_password}}\"\n}" },
+            "url": { "raw": "{{baseUrl}}/empresas/{{empresa_public_id}}/auth/login", "host": ["{{baseUrl}}"], "path": ["empresas", "{{empresa_public_id}}", "auth", "login"] }
+          }
+        },
+        {
+          "name": "7.1 GET /almacenes/:id/productos — listado simple (Producto Fase 2 con 60 unidades)",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('200 OK', () => pm.response.to.have.status(200));",
+            "const body = pm.response.json();",
+            "const fila = body.data.find(f => f.producto_public_id === pm.collectionVariables.get('producto_id'));",
+            "pm.test('incluye el producto con 60 unidades', () => { pm.expect(fila).to.not.be.undefined; pm.expect(fila.stock_actual).to.eql(60); });",
+            "pm.test('precio_venta_unidad = 4.00', () => pm.expect(fila.precio_venta_unidad).to.eql('4.00'));",
+            "pm.test('unidades_por_paquete = 1 (default, no seteado en 2.4) -> paquetes_completos = stock_actual', () => { pm.expect(fila.unidades_por_paquete).to.eql(1); pm.expect(fila.paquetes_completos).to.eql(60); });"
+          ] } }],
+          "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/almacenes/{{almacen_principal_id}}/productos", "host": ["{{baseUrl}}"], "path": ["almacenes", "{{almacen_principal_id}}", "productos"] } }
+        },
+        {
+          "name": "7.2 GET /almacenes/:id/productos/stock-bajo — vacío (todavía no hay stock_minimo seteado)",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('200 OK', () => pm.response.to.have.status(200));",
+            "pm.test('0 filas (stock_minimo es NULL)', () => pm.expect(pm.response.json().data).to.have.lengthOf(0));"
+          ] } }],
+          "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/almacenes/{{almacen_principal_id}}/productos/stock-bajo", "host": ["{{baseUrl}}"], "path": ["almacenes", "{{almacen_principal_id}}", "productos", "stock-bajo"] } }
+        },
+        {
+          "name": "7.3 PUT stock del almacén — fija stock_minimo por encima del actual (fuerza el escenario de stock bajo)",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('200 OK', () => pm.response.to.have.status(200));"
+          ] } }],
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"stock_actual\": 60,\n  \"stock_minimo\": 100\n}" },
+            "url": { "raw": "{{baseUrl}}/productos/{{producto_id}}/stock/almacenes/{{almacen_principal_id}}", "host": ["{{baseUrl}}"], "path": ["productos", "{{producto_id}}", "stock", "almacenes", "{{almacen_principal_id}}"] }
+          }
+        },
+        {
+          "name": "7.4 GET /almacenes/:id/productos/stock-bajo — ahora sí aparece (60 <= 100)",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('200 OK', () => pm.response.to.have.status(200));",
+            "const body = pm.response.json();",
+            "pm.test('1 fila, el producto en stock bajo', () => { pm.expect(body.data).to.have.lengthOf(1); pm.expect(body.data[0].producto_public_id).to.eql(pm.collectionVariables.get('producto_id')); });"
+          ] } }],
+          "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/almacenes/{{almacen_principal_id}}/productos/stock-bajo", "host": ["{{baseUrl}}"], "path": ["almacenes", "{{almacen_principal_id}}", "productos", "stock-bajo"] } }
+        },
+        {
+          "name": "7.5 GET /tiendas/:id/productos — listado simple (Producto Fase 2 con 22 unidades)",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('200 OK', () => pm.response.to.have.status(200));",
+            "const body = pm.response.json();",
+            "const fila = body.data.find(f => f.producto_public_id === pm.collectionVariables.get('producto_id'));",
+            "pm.test('incluye el producto con 22 unidades', () => { pm.expect(fila).to.not.be.undefined; pm.expect(fila.stock_actual).to.eql(22); });",
+            "pm.test('precio_venta_paquete es null (no seteado en 2.4)', () => pm.expect(fila.precio_venta_paquete).to.be.null);",
+            "pm.test('paquetes_completos = stock_actual (unidades_por_paquete=1)', () => pm.expect(fila.paquetes_completos).to.eql(22));"
+          ] } }],
+          "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/tiendas/{{tienda_id}}/productos", "host": ["{{baseUrl}}"], "path": ["tiendas", "{{tienda_id}}", "productos"] } }
+        },
+        {
+          "name": "7.6 GET /tiendas/:id/productos/stock-bajo — vacío (todavía no hay stock_minimo seteado)",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('200 OK', () => pm.response.to.have.status(200));",
+            "pm.test('0 filas (stock_minimo es NULL)', () => pm.expect(pm.response.json().data).to.have.lengthOf(0));"
+          ] } }],
+          "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/tiendas/{{tienda_id}}/productos/stock-bajo", "host": ["{{baseUrl}}"], "path": ["tiendas", "{{tienda_id}}", "productos", "stock-bajo"] } }
+        },
+        {
+          "name": "7.7 PUT stock de la tienda — fija stock_minimo por encima del actual (fuerza el escenario de stock bajo)",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('200 OK', () => pm.response.to.have.status(200));"
+          ] } }],
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"stock_actual\": 22,\n  \"stock_minimo\": 50\n}" },
+            "url": { "raw": "{{baseUrl}}/productos/{{producto_id}}/stock/tiendas/{{tienda_id}}", "host": ["{{baseUrl}}"], "path": ["productos", "{{producto_id}}", "stock", "tiendas", "{{tienda_id}}"] }
+          }
+        },
+        {
+          "name": "7.8 GET /tiendas/:id/productos/stock-bajo — ahora sí aparece (22 <= 50)",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('200 OK', () => pm.response.to.have.status(200));",
+            "const body = pm.response.json();",
+            "pm.test('1 fila, el producto en stock bajo', () => { pm.expect(body.data).to.have.lengthOf(1); pm.expect(body.data[0].producto_public_id).to.eql(pm.collectionVariables.get('producto_id')); });"
+          ] } }],
+          "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/tiendas/{{tienda_id}}/productos/stock-bajo", "host": ["{{baseUrl}}"], "path": ["tiendas", "{{tienda_id}}", "productos", "stock-bajo"] } }
+        },
+        {
+          "name": "7.9 GET /almacenes/:id/productos — almacén inexistente (debe rechazar, 404)",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('404 Not Found', () => pm.response.to.have.status(404));"
+          ] } }],
+          "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/almacenes/00000000-0000-0000-0000-000000000000/productos", "host": ["{{baseUrl}}"], "path": ["almacenes", "00000000-0000-0000-0000-000000000000", "productos"] } }
         }
       ]
     }
