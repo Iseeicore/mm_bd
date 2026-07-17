@@ -18,6 +18,25 @@ export const getAll = async (req, res) => {
   res.json(respuestaPaginada(rows, page, limit));
 };
 
+// Sin gate de permiso admin a propósito: cualquier usuario autenticado
+// necesita estos colores para pintar su propia UI, no solo quien administra
+// sistemas. Asume 1 sistema activo por empresa (así crea registro.js hoy);
+// si a futuro una empresa tiene varios, toma el de menor id.
+export const getActiva = async (req, res) => {
+  const { rows } = await db.query(
+    `SELECT c.id, c.sistema_id, c.color_primario, c.color_secundario, c.color_acento,
+            c.color_texto, c.color_fondo, c.tema
+     FROM S_configuraciones c
+     JOIN S_sistema s ON s.id = c.sistema_id
+     WHERE s.empresa_id = $1 AND c.es_activa = TRUE AND c.activo = TRUE
+     ORDER BY s.id
+     LIMIT 1`,
+    [req.user.empresa_id]
+  );
+  if (!rows.length) throw new NotFoundError();
+  res.json(rows[0]);
+};
+
 export const getById = async (req, res) => {
   const id = validarId(req.params.id);
   const { rows } = await db.query(
