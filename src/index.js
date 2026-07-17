@@ -33,7 +33,7 @@ app.use(globalLimiter);
 app.use('/api/v1/health', health);
 app.use('/api/v1/registro', authLimiter, registro);
 app.use('/api/v1/auth', authLimiter, authGlobal);
-app.use('/api/v1/empresas/:public_id/auth', authLimiter, auth);
+app.use('/api/v1/empresas/:public_id/auth', auth);
 app.use('/api/v1/sistemas', sistema);
 app.use('/api/v1/usuarios', usuario);
 app.use('/api/v1/roles', rol);
