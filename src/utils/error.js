@@ -31,6 +31,7 @@ export class ServiceUnavailableError extends AppError {
 }
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const FECHA_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 export const validarId = (id) => {
   const num = Number(id);
@@ -41,4 +42,11 @@ export const validarId = (id) => {
 export const validarUUID = (id) => {
   if (!UUID_RE.test(id)) throw new BadRequestError('ID invalido');
   return id;
+};
+
+export const validarFecha = (fecha) => {
+  if (!fecha || !FECHA_RE.test(fecha) || Number.isNaN(Date.parse(fecha))) {
+    throw new BadRequestError('Fecha invalida, formato esperado YYYY-MM-DD');
+  }
+  return fecha;
 };

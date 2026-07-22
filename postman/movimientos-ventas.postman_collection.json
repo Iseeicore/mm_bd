@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "Minimarket API — Pipeline Movimientos/Ventas (Fase 2)",
-    "description": "Flujo end-to-end: registro -> login -> setup (2 almacenes + 1 tienda + 1 producto) -> movimientos (entrada, traspaso, casos de error) -> ventas (1 línea, multi-línea multi-origen, casos de error) -> reportes (historial de stock, más vendidos) -> bloqueo por permiso ausente (403 con el rol Lector) -> listado de productos por ubicación (gap de Fase 1, no de Fase 2 -- se agregó acá a pedido del usuario).\n\nCorrer la colección completa en orden (Runner o Collection Runner). Depende de que la migración bd/migrations/007_add_movimientos_ventas.sql ya esté aplicada contra la base real. Cada carpeta depende de la anterior vía variables de colección (empresa_public_id, admin_email, admin_password, almacen_principal_id, almacen_secundario_id, tienda_id, producto_id, venta_id). La carpeta 06 cambia la cookie de sesión al usuario Lector; la carpeta 07 vuelve a loguearse como admin en su primer request (7.0) antes de seguir. Requiere la API corriendo en {{baseUrl}}.",
+    "description": "Flujo end-to-end: registro -> login -> setup (2 almacenes + 1 tienda + 1 producto) -> movimientos (entrada, traspaso, casos de error) -> ventas (1 línea, multi-línea multi-origen, casos de error) -> reportes (historial de stock, más vendidos) -> bloqueo por permiso ausente (403 con el rol Lector) -> listado de productos por ubicación (gap de Fase 1, no de Fase 2 -- se agregó acá a pedido del usuario) -> reportes de trazabilidad (bruto + resumen, gap de Fase 2).\n\nCorrer la colección completa en orden (Runner o Collection Runner). Depende de que las migraciones bd/migrations/007_add_movimientos_ventas.sql y bd/migrations/009_fix_trazabilidad_movimientos.sql ya estén aplicadas contra la base real. Cada carpeta depende de la anterior vía variables de colección (empresa_public_id, admin_email, admin_password, almacen_principal_id, almacen_secundario_id, tienda_id, producto_id, venta_id). La carpeta 06 cambia la cookie de sesión al usuario Lector; las carpetas 07 y 08 vuelven a loguearse como admin en su primer request (7.0 / 8.0) antes de seguir -- 08 también fija fecha_hoy (YYYY-MM-DD del día real, nunca hardcodeada) en ese mismo request. Requiere la API corriendo en {{baseUrl}}.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -17,7 +17,8 @@
     { "key": "rol_lector_id", "value": "" },
     { "key": "usuario_lector_id", "value": "" },
     { "key": "lector_email", "value": "" },
-    { "key": "lector_password", "value": "" }
+    { "key": "lector_password", "value": "" },
+    { "key": "fecha_hoy", "value": "" }
   ],
   "item": [
     {
@@ -356,7 +357,7 @@
       "name": "05 - Reportes",
       "item": [
         {
-          "name": "5.1 GET /reportes/historial-stock/:productoId — 4 salidas (traspaso + 2 ventas, sin la entrada)",
+          "name": "5.1 GET /reportes/historial-stock/:productoId — 4 filas (traspaso + 3 ventas, sin la entrada)",
           "event": [{ "listen": "test", "script": { "exec": [
             "pm.test('200 OK', () => pm.response.to.have.status(200));",
             "const body = pm.response.json();",
@@ -364,7 +365,7 @@
             "pm.test('ninguna fila es de tipo entrada', () => pm.expect(body.data.every(f => f.tipo !== 'entrada')).to.be.true);",
             "pm.test('hay 1 traspaso y 3 ventas', () => {",
             "  const tipos = body.data.map(f => f.tipo);",
-            "  pm.expect(tipos.filter(t => t === 'salida')).to.have.lengthOf(1);",
+            "  pm.expect(tipos.filter(t => t === 'traspaso')).to.have.lengthOf(1);",
             "  pm.expect(tipos.filter(t => t === 'venta')).to.have.lengthOf(3);",
             "});"
           ] } }],
@@ -589,6 +590,129 @@
             "pm.test('404 Not Found', () => pm.response.to.have.status(404));"
           ] } }],
           "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/almacenes/00000000-0000-0000-0000-000000000000/productos", "host": ["{{baseUrl}}"], "path": ["almacenes", "00000000-0000-0000-0000-000000000000", "productos"] } }
+        }
+      ]
+    },
+    {
+      "name": "08 - Reportes de trazabilidad (gap de Fase 2, fecha + filtros + paginación)",
+      "item": [
+        {
+          "name": "8.0 POST /empresas/:id/auth/login — vuelve a loguearse como admin (06 dejó la sesión como Lector) y fija la fecha de hoy",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": { "exec": [
+                "pm.collectionVariables.set('fecha_hoy', new Date().toISOString().slice(0, 10));"
+              ] }
+            },
+            {
+              "listen": "test",
+              "script": { "exec": [
+                "pm.test('200 OK', () => pm.response.to.have.status(200));"
+              ] }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"email\": \"{{admin_email}}\",\n  \"password\": \"{{admin_password}}\"\n}" },
+            "url": { "raw": "{{baseUrl}}/empresas/{{empresa_public_id}}/auth/login", "host": ["{{baseUrl}}"], "path": ["empresas", "{{empresa_public_id}}", "auth", "login"] }
+          }
+        },
+        {
+          "name": "8.1 GET /reportes/trazabilidad?fecha=hoy — bruto sin filtros (1 traspaso + 3 ventas del día)",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('200 OK', () => pm.response.to.have.status(200));",
+            "const body = pm.response.json();",
+            "pm.test('4 filas', () => pm.expect(body.data).to.have.lengthOf(4));",
+            "pm.test('meta.total = 4', () => pm.expect(body.meta.total).to.eql(4));",
+            "pm.test('1 traspaso y 3 ventas', () => {",
+            "  const tipos = body.data.map(f => f.tipo);",
+            "  pm.expect(tipos.filter(t => t === 'traspaso')).to.have.lengthOf(1);",
+            "  pm.expect(tipos.filter(t => t === 'venta')).to.have.lengthOf(3);",
+            "});",
+            "pm.test('suma de cantidad = 48 (30 traspaso + 5 + 3 + 10 ventas)', () => {",
+            "  const suma = body.data.reduce((acc, f) => acc + f.cantidad, 0);",
+            "  pm.expect(suma).to.eql(48);",
+            "});"
+          ] } }],
+          "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/reportes/trazabilidad?fecha={{fecha_hoy}}", "host": ["{{baseUrl}}"], "path": ["reportes", "trazabilidad"], "query": [{ "key": "fecha", "value": "{{fecha_hoy}}" }] } }
+        },
+        {
+          "name": "8.2 GET /reportes/trazabilidad/resumen?fecha=hoy — agrupado por producto+ubicación",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('200 OK', () => pm.response.to.have.status(200));",
+            "const body = pm.response.json();",
+            "pm.test('2 filas (almacen principal + tienda sur)', () => pm.expect(body.data).to.have.lengthOf(2));",
+            "const filaAlmacen = body.data.find(f => f.ubicacion_tipo === 'almacen');",
+            "const filaTienda = body.data.find(f => f.ubicacion_tipo === 'tienda');",
+            "pm.test('almacen principal cantidad_total = 40 (30 traspaso + 10 venta)', () => pm.expect(filaAlmacen.cantidad_total).to.eql('40'));",
+            "pm.test('tienda sur cantidad_total = 8 (5 + 3 venta)', () => pm.expect(filaTienda.cantidad_total).to.eql('8'));",
+            "pm.test('suma coincide con el bruto (48)', () => {",
+            "  const suma = body.data.reduce((acc, f) => acc + Number(f.cantidad_total), 0);",
+            "  pm.expect(suma).to.eql(48);",
+            "});"
+          ] } }],
+          "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/reportes/trazabilidad/resumen?fecha={{fecha_hoy}}", "host": ["{{baseUrl}}"], "path": ["reportes", "trazabilidad", "resumen"], "query": [{ "key": "fecha", "value": "{{fecha_hoy}}" }] } }
+        },
+        {
+          "name": "8.3 GET /reportes/trazabilidad?producto_id — filtro por producto (mismo resultado, único producto de la empresa)",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('200 OK', () => pm.response.to.have.status(200));",
+            "const body = pm.response.json();",
+            "pm.test('4 filas', () => pm.expect(body.data).to.have.lengthOf(4));",
+            "pm.test('todas las filas son del producto filtrado', () => pm.expect(body.data.every(f => f.producto_public_id === pm.collectionVariables.get('producto_id'))).to.be.true);"
+          ] } }],
+          "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/reportes/trazabilidad?fecha={{fecha_hoy}}&producto_id={{producto_id}}", "host": ["{{baseUrl}}"], "path": ["reportes", "trazabilidad"], "query": [{ "key": "fecha", "value": "{{fecha_hoy}}" }, { "key": "producto_id", "value": "{{producto_id}}" }] } }
+        },
+        {
+          "name": "8.4 GET /reportes/trazabilidad?origen_tipo=almacen&origen_id — filtro por ubicación (traspaso + venta desde Almacen Principal)",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('200 OK', () => pm.response.to.have.status(200));",
+            "const body = pm.response.json();",
+            "pm.test('2 filas (traspaso 30 + venta 10 desde Almacen Principal)', () => pm.expect(body.data).to.have.lengthOf(2));",
+            "pm.test('todas ubicadas en Almacen Principal', () => pm.expect(body.data.every(f => f.ubicacion_public_id === pm.collectionVariables.get('almacen_principal_id'))).to.be.true);",
+            "pm.test('suma de cantidad = 40', () => pm.expect(body.data.reduce((acc, f) => acc + f.cantidad, 0)).to.eql(40));"
+          ] } }],
+          "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/reportes/trazabilidad?fecha={{fecha_hoy}}&origen_tipo=almacen&origen_id={{almacen_principal_id}}", "host": ["{{baseUrl}}"], "path": ["reportes", "trazabilidad"], "query": [{ "key": "fecha", "value": "{{fecha_hoy}}" }, { "key": "origen_tipo", "value": "almacen" }, { "key": "origen_id", "value": "{{almacen_principal_id}}" }] } }
+        },
+        {
+          "name": "8.5 GET /reportes/trazabilidad — sin fecha (debe rechazar, 400)",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('400 Bad Request', () => pm.response.to.have.status(400));",
+            "pm.test('menciona fecha', () => pm.expect(pm.response.json().error).to.include('Fecha'));"
+          ] } }],
+          "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/reportes/trazabilidad", "host": ["{{baseUrl}}"], "path": ["reportes", "trazabilidad"] } }
+        },
+        {
+          "name": "8.6 GET /reportes/trazabilidad?fecha=21-07-2026 — formato inválido (debe rechazar, 400)",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('400 Bad Request', () => pm.response.to.have.status(400));",
+            "pm.test('menciona fecha', () => pm.expect(pm.response.json().error).to.include('Fecha'));"
+          ] } }],
+          "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/reportes/trazabilidad?fecha=21-07-2026", "host": ["{{baseUrl}}"], "path": ["reportes", "trazabilidad"], "query": [{ "key": "fecha", "value": "21-07-2026" }] } }
+        },
+        {
+          "name": "8.7 GET /reportes/trazabilidad?origen_tipo=almacen (sin origen_id) — deben venir juntos (debe rechazar, 400)",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('400 Bad Request', () => pm.response.to.have.status(400));",
+            "pm.test('menciona origen_tipo y origen_id', () => pm.expect(pm.response.json().error).to.include('origen_id'));"
+          ] } }],
+          "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/reportes/trazabilidad?fecha={{fecha_hoy}}&origen_tipo=almacen", "host": ["{{baseUrl}}"], "path": ["reportes", "trazabilidad"], "query": [{ "key": "fecha", "value": "{{fecha_hoy}}" }, { "key": "origen_tipo", "value": "almacen" }] } }
+        },
+        {
+          "name": "8.8 GET /reportes/trazabilidad?limit=1 — paginación (1 fila, meta.total real de 4)",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('200 OK', () => pm.response.to.have.status(200));",
+            "const body = pm.response.json();",
+            "pm.test('1 fila (limit=1)', () => pm.expect(body.data).to.have.lengthOf(1));",
+            "pm.test('meta.total = 4, meta.limit = 1, meta.pages = 4', () => {",
+            "  pm.expect(body.meta.total).to.eql(4);",
+            "  pm.expect(body.meta.limit).to.eql(1);",
+            "  pm.expect(body.meta.pages).to.eql(4);",
+            "});"
+          ] } }],
+          "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/reportes/trazabilidad?fecha={{fecha_hoy}}&limit=1", "host": ["{{baseUrl}}"], "path": ["reportes", "trazabilidad"], "query": [{ "key": "fecha", "value": "{{fecha_hoy}}" }, { "key": "limit", "value": "1" }] } }
         }
       ]
     }
